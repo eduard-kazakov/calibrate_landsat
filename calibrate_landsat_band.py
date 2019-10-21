@@ -61,37 +61,38 @@ class CalibrateLandsatBand():
         corrected_reflectance[corrected_reflectance < 0] = 0
         return corrected_reflectance
 
-    def calculate_physical_temperature_with_rad_transfer_model (self, ndvi_array, upWelling_radiance, downWelling_radiance, atmospheric_transmittance):
+    def calculate_physical_temperature_with_rad_transfer_model (self, lse_array, upWelling_radiance, downWelling_radiance, atmospheric_transmittance, ndvi_array=None):
         if self.band_metadata['type'] != 'thermal':
             raise TypeError('Given band is reflectance')
 
         # calc toaRadiance
         radiance = self.get_radiance_as_array()
-        dsNdviBand = gdal.Open(ndvi_path)
-        
-        # calc LSE zhang angoritm
-        condition_list = [np.logical_and(ndvi_array < -0.185, ndvi_array >= -1),
-                         np.logical_and(ndvi_array >= -0.185, ndvi_array <= 0.157),
-                         np.logical_and(ndvi_array >= 0.157, ndvi_array <= 0.727),
-                         np.logical_and(ndvi_array > 0.727, ndvi_array <= 1)]
 
-        mixed_pixels = np.log(ndvi_array)
-        mixed_pixels = np.multiply(mixed_pixels, 0.047)
-        mixed_pixels = np.add(mixed_pixels, 1.009)
-        choice_list = [0.995, 0.985, mixed_pixels, 0.990]
-        lse_data = np.select(condition_list, choice_list)
+        if ndvi_array != None:
+            # calc LSE zhang angoritm
+            condition_list = [np.logical_and(ndvi_array < -0.185, ndvi_array >= -1),
+                             np.logical_and(ndvi_array >= -0.185, ndvi_array <= 0.157),
+                             np.logical_and(ndvi_array >= 0.157, ndvi_array <= 0.727),
+                             np.logical_and(ndvi_array > 0.727, ndvi_array <= 1)]
+
+            mixed_pixels = np.log(ndvi_array)
+            mixed_pixels = np.multiply(mixed_pixels, 0.047)
+            mixed_pixels = np.add(mixed_pixels, 1.009)
+            choice_list = [0.995, 0.985, mixed_pixels, 0.990]
+            lse_array = np.select(condition_list, choice_list)
+
         # calc LST radiativeTransferEquation
         K1 = self.band_metadata['k1_constant']
         K2 = self.band_metadata['k2_constant']
 
         left = np.subtract(radiance, float(upWelling_radiance))
-        te = np.multiply(float(atmospheric_transmittance), lse_data)
+        te = np.multiply(float(atmospheric_transmittance), lse_array)
         left = np.divide(left, te)
 
-        right = np.subtract(1, lse_data)
+        right = np.subtract(1, lse_array)
 
-        cond_list = [lse_data < 0, lse_data > 0]
-        choice_list = [1, np.divide(right, lse_data)]
+        cond_list = [lse_array < 0, lse_array > 0]
+        choice_list = [1, np.divide(right, lse_array)]
         right = np.select(cond_list, choice_list)
 
         right = np.multiply(right, float(downWelling_radiance))
@@ -100,7 +101,7 @@ class CalibrateLandsatBand():
         plank_lower = np.divide(K1, LTS)
         plank_lower = np.add(plank_lower, 1)
 
-        log_cond_list = [plank_lower == 0, lse_data > 0]
+        log_cond_list = [plank_lower == 0, lse_array > 0]
         log_choice_list = [1, np.log(plank_lower)]
         plank_lower = np.select(log_cond_list, log_choice_list)
 
